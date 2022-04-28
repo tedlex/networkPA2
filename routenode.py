@@ -17,6 +17,9 @@ class DvNode(object):
         if self.parse_argv(argvs):
             self.socket = socket(AF_INET, SOCK_DGRAM)
             self.socket.bind(('', self.port))
+        self.table = {}  # distance table
+        self.next_hop = {}
+        self.table_init()
 
     def parse_argv(self, argvs):
         if argv[-1] == 'last':
@@ -36,7 +39,14 @@ class DvNode(object):
                     self.neighbors[int(neighbors[i])] = int(neighbors[i+1])
         return True
 
+    def table_init(self):
+        self.table[self.port] = {}
+        for neighbor, cost in self.neighbors.items():
+            self.table[self.port][neighbor] = cost
+            self.next_hop[neighbor] = neighbor
+
     def listening(self):
+        print('listening')
         while True:
             message, clientAddress = self.socket.recvfrom(2048)
             message = message.decode()
@@ -46,7 +56,7 @@ class DvNode(object):
 if argv[1] == 'dv':
     node = DvNode(argv[2:])
     print('neighbors', node.neighbors)
-
+    node.listening()
 
 
 
