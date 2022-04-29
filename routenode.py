@@ -17,9 +17,10 @@ class DvNode(object):
         if self.parse_argv(argvs):
             self.socket = socket(AF_INET, SOCK_DGRAM)
             self.socket.bind(('', self.port))
-        self.table = {}  # distance table
+        self.dv = {}  # distance vectors
         self.next_hop = {}
-        self.table_init()
+        self.vector_init()
+        self.ip = '127.0.0.1'
 
     def parse_argv(self, argvs):
         if argv[-1] == 'last':
@@ -39,11 +40,27 @@ class DvNode(object):
                     self.neighbors[int(neighbors[i])] = int(neighbors[i+1])
         return True
 
-    def table_init(self):
-        self.table[self.port] = {}
+    def vector_init(self):
+        self.dv[self.port] = {}
         for neighbor, cost in self.neighbors.items():
-            self.table[self.port][neighbor] = cost
+            # initialize self distance vector
+            self.dv[self.port][neighbor] = cost
             self.next_hop[neighbor] = neighbor
+            # initialize neighbors' distance vector
+            self.dv[neighbor] = {}
+
+    def broad2neighbor(self):
+        msg = 'DV FROM ' + str(self.port)
+        # message of self distance vector
+        for dest, cost in self.dv[self.port].items():
+            msg += ' ' + str(dest) + ' ' + str(cost)
+        # send dv to all neighbors
+        t = time.time()
+        t = datetime.datetime.fromtimestamp(t).strftime('%Y-%m-%d %H:%M:%S')
+        msg = 'TIME ' + str(t) + ' ' + msg
+        for neighbor, cost in self.neighbors.items():
+            self.socket.sendto(msg.encode(), (self.ip, neighbor))
+            print('[%s] Message sent from Node %s to Node %s'%(t, self.port, neighbor))
 
     def listening(self):
         print('listening')
@@ -56,6 +73,8 @@ class DvNode(object):
 if argv[1] == 'dv':
     node = DvNode(argv[2:])
     print('neighbors', node.neighbors)
+    if node.last:
+        node.broad2neighbor()
     node.listening()
 
 
