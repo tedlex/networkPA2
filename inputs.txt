@@ -2,3 +2,17 @@ python3 routenode.py dv r 123 1111 2222 1 3333 50
 python3 routenode.py dv r 123 2222 1111 1 3333 2 4444 8
 python3 routenode.py dv r 123 3333 1111 50 2222 2 4444 5
 python3 routenode.py dv r 123 4444 2222 8 3333 5 last
+
+
+python3 routenode.py dv r 123 1111 2222 2 3333 1 4444 5
+python3 routenode.py dv r 123 2222 1111 2 3333 2 4444 3
+python3 routenode.py dv r 123 3333 1111 1 2222 2 4444 3 5555 1
+python3 routenode.py dv r 123 4444 1111 5 2222 3 3333 3 5555 1 6666 5
+python3 routenode.py dv r 123 5555 3333 1 4444 1 6666 2
+python3 routenode.py dv r 123 6666 4444 5 5555 2 last
+
+
+
+python3 routenode.py dv r 123 1111 2222 1 3333 50
+python3 routenode.py dv r 123 2222 1111 1 3333 2
+python3 routenode.py dv r 123 3333 1111 50 2222 2 last 60
