@@ -61,14 +61,29 @@ class DvNode(object):
         t = time.time()
         # t = datetime.datetime.fromtimestamp(t).strftime('%Y-%m-%d %H:%M:%S')
         msg = '[%s] DV' % t
-        # message of self distance vector
-        for dest, cost in self.dv[self.port].items():
-            msg += ' ' + str(dest) + ',' + str(cost)
-        # send dv to all neighbors
-        for neighbor, cost in self.neighbors.items():
-            self.socket.sendto(msg.encode(), (self.ip, neighbor))
-            print('[%s] Message sent from Node %s to Node %s' % (
-                parse_time(t), self.port, neighbor))
+        if self.mode == 'r':
+            # message of self distance vector
+            for dest, cost in self.dv[self.port].items():
+                msg += ' ' + str(dest) + ',' + str(cost)
+            # send dv to all neighbors
+            for neighbor, _ in self.neighbors.items():
+                self.socket.sendto(msg.encode(), (self.ip, neighbor))
+                print('[%s] Message sent from Node %s to Node %s' % (
+                    parse_time(t), self.port, neighbor))
+        elif self.mode == 'p':
+            for neighbor, _ in self.neighbors.items():
+                msg = '[%s] DV' % time.time()
+                for dest, cost in self.dv[self.port].items():
+                    if dest != neighbor and self.next_hop.get(dest) == neighbor:
+                        cost = INFTY
+                        print('[%s] Message sent from Node %s to Node %s with distance to Node %s as inf' % (
+                            parse_time(t), self.port, neighbor, dest))
+                    msg += ' ' + str(dest) + ',' + str(cost)
+                self.socket.sendto(msg.encode(), (self.ip, neighbor))
+                print('[%s] Message sent from Node %s to Node %s' % (
+                    parse_time(t), self.port, neighbor))
+        else:
+            print('ERROR: wrong mode!')
 
     def recv_DV(self, sender, message):
         self.dv[int(sender)] = {}
@@ -96,8 +111,8 @@ class DvNode(object):
         self.update_routingTable()  # 这里直接broadcast也行吧
 
     def update_routingTable(self, change=False):
-        print('准备update')
-        print('dv', self.dv)
+        #print('准备update')
+        #print('dv', self.dv)
         # change = False
         for dest in self.all_nodes:
             if dest != self.port:  # cost from self to self is always 0
@@ -115,7 +130,7 @@ class DvNode(object):
                 if new_routing != old_routing:
                     self.dv[self.port][dest] = new_routing[0]
                     self.next_hop[dest] = new_routing[1]
-                    print('routing to %s updated from' % dest, old_routing, 'to', new_routing)
+                    #print('routing to %s updated from' % dest, old_routing, 'to', new_routing)
                     change = True
         if change:
             #print('routing updated!')
@@ -146,11 +161,11 @@ class DvNode(object):
         print(s)
 
     def listening(self):
-        print('listening')
+        #print('listening')
         while True:
             message, clientAddress = self.socket.recvfrom(2048)
             message = message.decode()
-            print('receive', clientAddress, message)
+            #print('receive', clientAddress, message)
             if re.match('\[[0-9.]+\] DV( \d+,\d+)+', message):
                 th = threading.Thread(target=self.recv_DV, args=(clientAddress[1], message))
                 th.start()
@@ -162,7 +177,7 @@ class DvNode(object):
         time.sleep(10)
         print('----------------------')
         target = max(self.neighbors)
-        self.neighbors[target] = self.cost_change
+        self.neighbors[target] = self.cost_change  # update table 用的是neighbors cost，所以要改neighbors而不是dv[self]
         #self.dv[self.port][target] = self.cost_change
         t = time.time()
         print('[%s] Node %s cost updated to %s' %(t, target, self.cost_change))
