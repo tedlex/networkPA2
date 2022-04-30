@@ -3,6 +3,7 @@ from sys import argv
 import threading
 import re
 import time
+import random
 
 
 class DvNode(object):
@@ -173,12 +174,15 @@ class DvNode(object):
 class LsNode(object):
     def __init__(self, argvs):
         self.mode = argvs[0]
+        self.UPDATE_INTERVAL = int(argvs[1])
         self.port = int(argvs[2])
         self.last = False
         self.cost_change = None
         self.neighbors = {}  # neighbors of every node and costs {node1: {nbr1:cost}, node2: {}}
         self.LStable = {}  # {(node1, node2): cost, ...}
         self.routing_table = {}  # {destination:(cost, next_hop), ...}
+        self.ROUTING_INTERVAL = 10  # 改为30
+        self.first_routing = False  # After first routing, only compute routing if LStable changes
         # self.all_nodes = set()
         if self.parse_argv(argvs):
             self.socket = socket(AF_INET, SOCK_DGRAM)
@@ -186,7 +190,6 @@ class LsNode(object):
         self.build_table()
         self.ip = '127.0.0.1'
         self.next_sequence = 0
-        self.ROUTING_INTERVAL = 10  # 改为30
         self.activation = False
         self.last_seq = {}  # each nodes' LSA seq that have been sent or forwarded by self
 
@@ -225,6 +228,8 @@ class LsNode(object):
                     change = True
         if change:
             self.display_table()
+            if self.first_routing:
+                self.compute_routing()
 
     def broadLSA(self):
         t = time.time()
@@ -252,8 +257,8 @@ class LsNode(object):
         flag = True
         for n, nbrs in self.neighbors.items():
             for nbr, cost in nbrs.items():
-                if self.neighbors.get(nbr) is not None:
-                    if self.neighbors[nbr].get(n) != cost:
+                if self.neighbors.get(nbr) is not None and self.neighbors[nbr].get(n) is not None:
+                    if self.neighbors[nbr][n] != cost:
                         flag = False
                         print('信息不对称,(%s, %s) = %s, (%s, %s) = %s' % (
                             n, nbr, cost, nbr, n, self.neighbors[nbr][n]))
@@ -268,6 +273,20 @@ class LsNode(object):
             if re.match('\[[0-9.]+\] LSA FROM (\d+) SEQ (\d+) .+', message):
                 th = threading.Thread(target=self.recv_LSA, args=(clientAddress[1], message))
                 th.start()
+            elif re.match('\[([0-9.]+)\] COST CHANGE (\d+)', message):
+                th = threading.Thread(target=self.recv_cost_change, args=(clientAddress[1], message))
+                th.start()
+
+    def recv_cost_change(self, sender, message):
+        m = re.match('\[([0-9.]+)\] COST CHANGE (\d+)', message)
+        t, cost = m.groups()
+        print('[%s] Link value message received at Node %s from Node %s' % (t, self.port, sender))
+        # self.dv[self.port][sender] = int(cost)
+        self.neighbors[self.port][sender] = int(cost)
+        self.neighbors[sender][self.port] = int(cost)
+        print('[%s] Node %s cost updated to %s' % (t, sender, cost))
+        self.build_table()
+        self.broadLSA()
 
     def recv_LSA(self, sender, msg):
         m = re.match('\[([0-9.]+)\] LSA FROM (\d+) SEQ (\d+) .+', msg)
@@ -275,7 +294,7 @@ class LsNode(object):
         source, seq = int(source), int(seq)
         print('[%s] LSA of Node %s with sequence number %s received from Node %s' % (
             t, source, seq, sender))
-        if self.last_seq.get(source) is not None and self.last_seq[source] <= seq:
+        if self.last_seq.get(source) is not None and self.last_seq[source] >= seq:
             # duplicate LSA
             print('[%s] DUPLICATE LSA packet Received, AND Dropped:\n- LSA of Node'
                   ' %s\n- Sequence number %s\n- Received from %s ' % (
@@ -286,6 +305,9 @@ class LsNode(object):
             for m in re.findall('\d+,\d+', msg):
                 nbr, cost = m.split(',')
                 self.neighbors[source][int(nbr)] = int(cost)
+                if self.neighbors.get(int(nbr)) is None:
+                    self.neighbors[int(nbr)] = {}
+                self.neighbors[int(nbr)][source] = int(cost)  # 保持对称
             if self.check_neighbors():
                 self.build_table()
             # forward LSA
@@ -300,12 +322,36 @@ class LsNode(object):
         if not self.activation:
             self.activate()
 
+    def period_LSA(self):
+        while True:
+            time.sleep(self.UPDATE_INTERVAL + random.random())
+            self.broadLSA()
+
     def activate(self):
         self.activation = True
         print('Node %s activate!' % self.port)
         self.broadLSA()
+        th = threading.Thread(target=self.period_LSA)
+        #th.start()
+        if self.last and self.cost_change is not None:
+            th2 = threading.Thread(target=self.link_change)
+            th2.start()
         time.sleep(self.ROUTING_INTERVAL)
         self.compute_routing()
+        self.first_routing = True
+
+    def link_change(self):
+        time.sleep(1.2*self.ROUTING_INTERVAL)
+        target = max(self.neighbors[self.port])
+        self.neighbors[self.port][target] = self.cost_change
+        self.neighbors[target][self.port] = self.cost_change
+        t = time.time()
+        print('[%s] Node %s cost updated to %s' % (t, target, self.cost_change))
+        control = '[%s] COST CHANGE %s' % (t, self.cost_change)
+        self.socket.sendto(control.encode(), (self.ip, target))
+        print('[%s] Link value message sent from Node %s to Node %s' % (t, self.port, target))
+        self.build_table()
+        self.broadLSA()
 
     def compute_routing(self):
         all_nodes = set()
@@ -350,12 +396,6 @@ class LsNode(object):
             if self.routing_table[dest][1] != dest:
                 s += ' ; Next hop -> Node %s' % self.routing_table[dest][1]
         print(s)
-
-
-
-
-
-
 
 
 INFTY = 1E10
