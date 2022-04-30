@@ -158,7 +158,7 @@ class DvNode(object):
                 th.start()
 
     def timer(self):
-        time.sleep(10)
+        time.sleep(30)
         # print('----------------------')
         target = max(self.neighbors)
         self.neighbors[target] = self.cost_change  # update table 用的是neighbors cost，所以要改neighbors而不是dv[self]
@@ -181,7 +181,7 @@ class LsNode(object):
         self.neighbors = {}  # neighbors of every node and costs {node1: {nbr1:cost}, node2: {}}
         self.LStable = {}  # {(node1, node2): cost, ...}
         self.routing_table = {}  # {destination:(cost, next_hop), ...}
-        self.ROUTING_INTERVAL = 10  # 改为30
+        self.ROUTING_INTERVAL = 30  # 改为30
         self.first_routing = False  # After first routing, only compute routing if LStable changes
         # self.all_nodes = set()
         if self.parse_argv(argvs):
@@ -269,7 +269,7 @@ class LsNode(object):
         while True:
             message, clientAddress = self.socket.recvfrom(2048)
             message = message.decode()
-            print('receive', clientAddress, message)
+            #print('receive', clientAddress, message)
             if re.match('\[[0-9.]+\] LSA FROM (\d+) SEQ (\d+) .+', message):
                 th = threading.Thread(target=self.recv_LSA, args=(clientAddress[1], message))
                 th.start()
@@ -317,7 +317,7 @@ class LsNode(object):
                     print('[%s] LSA of Node %s with sequence number %s sent to Node %s' % (
                         time.time(), source, seq, nbr))
             self.last_seq[source] = seq
-            print('seq 记录', self.last_seq)
+            #print('seq 记录', self.last_seq)
         # activate
         if not self.activation:
             self.activate()
@@ -329,10 +329,10 @@ class LsNode(object):
 
     def activate(self):
         self.activation = True
-        print('Node %s activate!' % self.port)
+        #print('Node %s activate!' % self.port)
         self.broadLSA()
         th = threading.Thread(target=self.period_LSA)
-        #th.start()
+        th.start()
         if self.last and self.cost_change is not None:
             th2 = threading.Thread(target=self.link_change)
             th2.start()
