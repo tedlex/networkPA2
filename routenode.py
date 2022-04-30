@@ -178,12 +178,17 @@ class LsNode(object):
         self.cost_change = None
         self.neighbors = {}  # neighbors of every node and costs {node1: {nbr1:cost}, node2: {}}
         self.LStable = {}  # {(node1, node2): cost, ...}
+        self.routing_table = {}  # {destination:(cost, next_hop), ...}
         # self.all_nodes = set()
         if self.parse_argv(argvs):
             self.socket = socket(AF_INET, SOCK_DGRAM)
             self.socket.bind(('', self.port))
         self.build_table()
         self.ip = '127.0.0.1'
+        self.next_sequence = 0
+        self.ROUTING_INTERVAL = 10  # 改为30
+        self.activation = False
+        self.last_seq = {}  # each nodes' LSA seq that have been sent or forwarded by self
 
     def parse_argv(self, argvs):
         if argvs[-1] == 'last':
@@ -221,6 +226,18 @@ class LsNode(object):
         if change:
             self.display_table()
 
+    def broadLSA(self):
+        t = time.time()
+        msg = '[%s] LSA FROM %s SEQ %s' % (t, self.port, self.next_sequence)
+        for nbr, cost in self.neighbors[self.port].items():
+            msg += ' %s,%s' % (nbr, cost)
+        for nbr, _ in self.neighbors[self.port].items():
+            self.socket.sendto(msg.encode(), (self.ip, nbr))
+            print('[%s] LSA of Node %s with sequence number %s sent to Node %s' % (
+                t, self.port, self.next_sequence, nbr))
+        self.last_seq[self.port] = self.next_sequence
+        self.next_sequence += 1
+
     def display_table(self):
         t = time.time()
         s = '[%s] Node %s Network topology' % (t, self.port)
@@ -236,11 +253,109 @@ class LsNode(object):
         for n, nbrs in self.neighbors.items():
             for nbr, cost in nbrs.items():
                 if self.neighbors.get(nbr) is not None:
-                    if self.neighbors[nbr][n] != cost:
+                    if self.neighbors[nbr].get(n) != cost:
                         flag = False
                         print('信息不对称,(%s, %s) = %s, (%s, %s) = %s' % (
                             n, nbr, cost, nbr, n, self.neighbors[nbr][n]))
         return flag
+
+    def listening(self):
+        # print('listening')
+        while True:
+            message, clientAddress = self.socket.recvfrom(2048)
+            message = message.decode()
+            print('receive', clientAddress, message)
+            if re.match('\[[0-9.]+\] LSA FROM (\d+) SEQ (\d+) .+', message):
+                th = threading.Thread(target=self.recv_LSA, args=(clientAddress[1], message))
+                th.start()
+
+    def recv_LSA(self, sender, msg):
+        m = re.match('\[([0-9.]+)\] LSA FROM (\d+) SEQ (\d+) .+', msg)
+        t, source, seq = m.groups()
+        source, seq = int(source), int(seq)
+        print('[%s] LSA of Node %s with sequence number %s received from Node %s' % (
+            t, source, seq, sender))
+        if self.last_seq.get(source) is not None and self.last_seq[source] <= seq:
+            # duplicate LSA
+            print('[%s] DUPLICATE LSA packet Received, AND Dropped:\n- LSA of Node'
+                  ' %s\n- Sequence number %s\n- Received from %s ' % (
+                      time.time(), source, seq, sender))
+        else:  # new LSA from source
+            if self.neighbors.get(source) is None:  # 1st LSA from source
+                self.neighbors[source] = {}
+            for m in re.findall('\d+,\d+', msg):
+                nbr, cost = m.split(',')
+                self.neighbors[source][int(nbr)] = int(cost)
+            if self.check_neighbors():
+                self.build_table()
+            # forward LSA
+            for nbr, _ in self.neighbors[self.port].items():
+                if nbr != sender and nbr != source:
+                    self.socket.sendto(msg.encode(), (self.ip, nbr))
+                    print('[%s] LSA of Node %s with sequence number %s sent to Node %s' % (
+                        time.time(), source, seq, nbr))
+            self.last_seq[source] = seq
+            print('seq 记录', self.last_seq)
+        # activate
+        if not self.activation:
+            self.activate()
+
+    def activate(self):
+        self.activation = True
+        print('Node %s activate!' % self.port)
+        self.broadLSA()
+        time.sleep(self.ROUTING_INTERVAL)
+        self.compute_routing()
+
+    def compute_routing(self):
+        all_nodes = set()
+        for link, cost in self.LStable.items():
+            all_nodes.add(link[0])
+            all_nodes.add(link[1])
+        # initilization
+        N = set()
+        N.add(self.port)
+        D = {}
+        prev = {}
+        for v in all_nodes:
+            if v != self.port:
+                if self.neighbors[self.port].get(v) is not None:
+                    D[v] = self.neighbors[self.port][v]
+                    prev[v] = self.port
+                else:
+                    D[v] = INFTY
+        # loop
+        while N != all_nodes:
+            min_v = (None, INFTY)
+            for w, Dw in D.items():
+                if w not in N and Dw < min_v[1]:
+                    min_v = (w, Dw)
+            w = min_v[0]
+            N.add(w)
+            for v, cost in self.neighbors[w].items():
+                if v not in N:
+                    if D[w] + cost < D[v]:
+                        prev[v] = w
+                        D[v] = D[w] + cost
+        # routing table
+        for v, Dv in D.items():
+            next_hop = v
+            while prev[next_hop] != self.port:
+                next_hop = prev[next_hop]
+            self.routing_table[v] = (Dv, next_hop)
+        # print routing table
+        s = '[%s] Node %s Routing Table' % (time.time(), self.port)
+        for dest in sorted(list(self.routing_table)):
+            s += '\n-(%s) -> Node %s' % (self.routing_table[dest][0], dest)
+            if self.routing_table[dest][1] != dest:
+                s += ' ; Next hop -> Node %s' % self.routing_table[dest][1]
+        print(s)
+
+
+
+
+
+
 
 
 INFTY = 1E10
@@ -251,8 +366,12 @@ if argv[1] == 'dv':
     if node.last:
         node.broad2neighbor()
     if node.cost_change is not None:
-        th = threading.Thread(target=node.timer)
-        th.start()
+        thd = threading.Thread(target=node.timer)
+        thd.start()
     node.listening()
 elif argv[1] == 'ls':
     node = LsNode(argv[2:])
+    if node.last:
+        thd = threading.Thread(target=node.activate)
+        thd.start()
+    node.listening()
