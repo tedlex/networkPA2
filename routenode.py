@@ -1,11 +1,8 @@
 from socket import *
 from sys import argv
-import os
-import csv
 import threading
 import re
 import time
-import datetime
 
 
 class DvNode(object):
@@ -24,7 +21,7 @@ class DvNode(object):
         self.vector_init()
         self.ip = '127.0.0.1'
         self.at_least_once = 0
-        #self.th_display = threading.Thread(target=self.display_routing)
+        # self.th_display = threading.Thread(target=self.display_routing)
 
     def parse_argv(self, argvs):
         if argv[-1] == 'last':
@@ -78,80 +75,80 @@ class DvNode(object):
             dest, cost = m.split(',')
             if int(dest) not in self.all_nodes:
                 self.all_nodes.add(int(dest))
-                #print('收到新node', int(dest))
+                # print('收到新node', int(dest))
                 change = True  # if a new node is learned, then the dv must will be updated
             self.dv[int(sender)][int(dest)] = int(cost)
         t = re.findall('\[([0-9.]+)\]', message)
         print('[%s] Message received at Node %s from Node %s' % (
             t[0], self.port, sender))
-        #print('DV', self.dv)
+        # print('DV', self.dv)
         self.update_routingTable(change)
 
     def recv_cost_change(self, sender, message):
         m = re.match('\[([0-9.]+)\] COST CHANGE (\d+)', message)
         t, cost = m.groups()
         print('[%s] Link value message received at Node %s from Node %s' % (t, self.port, sender))
-        #self.dv[self.port][sender] = int(cost)
+        # self.dv[self.port][sender] = int(cost)
         self.neighbors[sender] = int(cost)
         print('[%s] Node %s cost updated to %s' % (t, sender, cost))
         self.update_routingTable()  # 这里直接broadcast也行吧
 
     def update_routingTable(self, change=False):
-        #print('准备update')
-        #print('dv', self.dv)
+        # print('准备update')
+        # print('dv', self.dv)
         # change = False
         for dest in self.all_nodes:
             if dest != self.port:  # cost from self to self is always 0
-                #print('准备update到%s的路径' % dest)
+                # print('准备update到%s的路径' % dest)
                 old_routing = (self.dv[self.port].get(dest), self.next_hop.get(dest))
                 new_routing = (INFTY, None)  # find min using bellman equation. 既然从某处获得了这个node，一定有一条路径
                 for nbr, cost in self.neighbors.items():
-                    #print('检查邻居%s的dv: %s' % (nbr, self.dv.get(nbr)))
+                    # print('检查邻居%s的dv: %s' % (nbr, self.dv.get(nbr)))
                     # 可能没有收到邻居的dv，也可能邻居的dv里没有dest
                     if self.dv.get(nbr) is not None:
                         if self.dv[nbr].get(dest) is not None:  # 不能省略is not None， 因为可能值为0
-                            #print('dv存在邻居到dest距离，%s + %s' % (cost, self.dv[nbr][dest]))
+                            # print('dv存在邻居到dest距离，%s + %s' % (cost, self.dv[nbr][dest]))
                             if cost + self.dv[nbr][dest] < new_routing[0]:
                                 new_routing = (cost + self.dv[nbr][dest], nbr)
                 if new_routing != old_routing:
                     self.dv[self.port][dest] = new_routing[0]
                     self.next_hop[dest] = new_routing[1]
-                    #print('routing to %s updated from' % dest, old_routing, 'to', new_routing)
+                    # print('routing to %s updated from' % dest, old_routing, 'to', new_routing)
                     change = True
         if change:
-            #print('routing updated!')
-            #i = input('continue to send')
+            # print('routing updated!')
+            # i = input('continue to send')
             self.broad2neighbor()
         elif self.at_least_once == 0:
             self.at_least_once += 1
-            #print('no updated, but first time')
-            #i = input('continue to send')
+            # print('no updated, but first time')
+            # i = input('continue to send')
             self.broad2neighbor()
         else:
-            #print('no update')
+            # print('no update')
             pass
         self.display_routing()
-        #self.th_display.start()
+        # self.th_display.start()
 
     def display_routing(self):
         t = time.time()
-        #print('[%s] Node %s Routing Table' % (t, self.port))
+        # print('[%s] Node %s Routing Table' % (t, self.port))
         s = '[%s] Node %s Routing Table' % (t, self.port)
         for n in sorted(list(self.all_nodes)):
             if n != self.port:
                 s += '\n- (%s) -> n %s' % (self.dv[self.port][n], n)
                 if self.next_hop[n] != n:
                     s += ' ; Next hop -> n %s' % self.next_hop[n]
-                #print(r)
-        #self.th_display.stop()
+                # print(r)
+        # self.th_display.stop()
         print(s)
 
     def listening(self):
-        #print('listening')
+        # print('listening')
         while True:
             message, clientAddress = self.socket.recvfrom(2048)
             message = message.decode()
-            #print('receive', clientAddress, message)
+            # print('receive', clientAddress, message)
             if re.match('\[[0-9.]+\] DV( \d+,\d+)+', message):
                 th = threading.Thread(target=self.recv_DV, args=(clientAddress[1], message))
                 th.start()
@@ -161,31 +158,94 @@ class DvNode(object):
 
     def timer(self):
         time.sleep(10)
-        #print('----------------------')
+        # print('----------------------')
         target = max(self.neighbors)
         self.neighbors[target] = self.cost_change  # update table 用的是neighbors cost，所以要改neighbors而不是dv[self]
-        #self.dv[self.port][target] = self.cost_change
+        # self.dv[self.port][target] = self.cost_change
         t = time.time()
-        print('[%s] Node %s cost updated to %s' %(t, target, self.cost_change))
-        control = '[%s] COST CHANGE %s' %(t, self.cost_change)
+        print('[%s] Node %s cost updated to %s' % (t, target, self.cost_change))
+        control = '[%s] COST CHANGE %s' % (t, self.cost_change)
         self.socket.sendto(control.encode(), (self.ip, target))
-        print('[%s] Link value message sent from Node %s to Node %s' %(t, self.port, target))
+        print('[%s] Link value message sent from Node %s to Node %s' % (t, self.port, target))
         self.update_routingTable()  # 这里直接broadcast也行吧
 
 
+class LsNode(object):
+    def __init__(self, argvs):
+        self.mode = argvs[0]
+        self.port = int(argvs[2])
+        self.last = False
+        self.cost_change = None
+        self.neighbors = {}  # neighbors of every node and costs {node1: {nbr1:cost}, node2: {}}
+        self.LStable = {}  # {(node1, node2): cost, ...}
+        # self.all_nodes = set()
+        if self.parse_argv(argvs):
+            self.socket = socket(AF_INET, SOCK_DGRAM)
+            self.socket.bind(('', self.port))
+        self.table_init()
+        self.ip = '127.0.0.1'
 
-def parse_time(timestamp):
-    return datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+    def parse_argv(self, argvs):
+        if argvs[-1] == 'last':
+            self.last = True
+            neighbors = argvs[3:-1]
+        elif argvs[-2] == 'last':
+            self.last = True
+            self.cost_change = int(argvs[-1])
+            neighbors = argvs[3:-2]
+        else:
+            neighbors = argvs[3:]
+        # self.all_nodes.add(self.port)
+        if len(neighbors) % 2 != 0:
+            print('Wrong input of neighbors and costs!')
+            return False
+        else:
+            for i in range(len(neighbors)):
+                if i % 2 == 0:
+                    self.neighbors[int(neighbors[i])] = int(neighbors[i + 1])
+                    # self.all_nodes.add(int(neighbors[i]))
+        return True
+
+    def build_table(self):
+        # construct table based on self.neighbors
+        change = False
+        for n, nbrs in self.neighbors.items():
+            for nbr, cost in nbrs.items():
+                link = (n, nbr) if n < nbr else (nbr, n)
+                if cost != self.LStable.get(link):
+                    self.LStable[link] = cost
+                    change = True
+        if change:
+            self.display_table()
+
+    def display_table(self):
+        pass
+
+    def check_neighbors(self):
+        # 正常情况下，neighbors里存储的信息应该是对称的。
+        # 有一条 ab 边，就有一条ba边有相同的值。或者是None，还没有收到来自b的LSA
+        flag = True
+        for n, nbrs in self.neighbors.items():
+            for nbr, cost in nbrs.items():
+                if self.neighbors.get(nbr) is not None:
+                    if self.neighbors[nbr][n] != cost:
+                        flag = False
+                        print('信息不对称,(%s, %s) = %s, (%s, %s) = %s' %(
+                            n, nbr, cost, nbr, n, self.neighbors[nbr][n]))
+        return flag
+
 
 
 INFTY = 1E10
 
 if argv[1] == 'dv':
     node = DvNode(argv[2:])
-    print('neighbors', node.neighbors)
+    # print('neighbors', node.neighbors)
     if node.last:
         node.broad2neighbor()
     if node.cost_change is not None:
         th = threading.Thread(target=node.timer)
         th.start()
     node.listening()
+elif argv[1] == 'ls':
+    node = LsNode(argv[2:])
