@@ -182,7 +182,7 @@ class LsNode(object):
         if self.parse_argv(argvs):
             self.socket = socket(AF_INET, SOCK_DGRAM)
             self.socket.bind(('', self.port))
-        self.table_init()
+        self.build_table()
         self.ip = '127.0.0.1'
 
     def parse_argv(self, argvs):
@@ -200,15 +200,18 @@ class LsNode(object):
             print('Wrong input of neighbors and costs!')
             return False
         else:
+            self.neighbors[self.port] = {}
             for i in range(len(neighbors)):
                 if i % 2 == 0:
-                    self.neighbors[int(neighbors[i])] = int(neighbors[i + 1])
+                    self.neighbors[self.port][int(neighbors[i])] = int(neighbors[i + 1])
                     # self.all_nodes.add(int(neighbors[i]))
         return True
 
     def build_table(self):
         # construct table based on self.neighbors
         change = False
+        if not self.check_neighbors():
+            return False
         for n, nbrs in self.neighbors.items():
             for nbr, cost in nbrs.items():
                 link = (n, nbr) if n < nbr else (nbr, n)
@@ -219,7 +222,12 @@ class LsNode(object):
             self.display_table()
 
     def display_table(self):
-        pass
+        t = time.time()
+        s = '[%s] Node %s Network topology' % (t, self.port)
+        links = sorted(list(self.LStable))
+        for link in links:
+            s += '\n- (%s) from Node %s to Node %s' % (self.LStable[link], link[0], link[1])
+        print(s)
 
     def check_neighbors(self):
         # 正常情况下，neighbors里存储的信息应该是对称的。
@@ -230,10 +238,9 @@ class LsNode(object):
                 if self.neighbors.get(nbr) is not None:
                     if self.neighbors[nbr][n] != cost:
                         flag = False
-                        print('信息不对称,(%s, %s) = %s, (%s, %s) = %s' %(
+                        print('信息不对称,(%s, %s) = %s, (%s, %s) = %s' % (
                             n, nbr, cost, nbr, n, self.neighbors[nbr][n]))
         return flag
-
 
 
 INFTY = 1E10
